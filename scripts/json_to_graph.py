@@ -46,18 +46,19 @@ def add_conv2d(op, tensors_description, endpoints, interpreter):
     stride_h = op["builtin_options"]["stride_h"]
     padding = op["builtin_options"]["padding"]
 
-    kernel_init = tf.keras.initializers.Constant(interpreter.get_tensor(kernel_ind))
-    bias_init = tf.keras.initializers.Constant(interpreter.get_tensor(bias_ind))
+    kernels = tf.constant(interpreter.get_tensor(kernel_ind))
+    kernels = tf.transpose(kernels, [1, 2, 3, 0])
 
-    endpoints[str(output_ind)] = tf.keras.layers.Conv2D(
-        kernel_size=[ksize_h, ksize_w],
-        filters=filters,
-        strides=[stride_h, stride_w],
+    bias = tf.constant(interpreter.get_tensor(bias_ind))
+
+    out = tf.nn.conv2d(
+        input,
+        kernels,
+        strides=[1, stride_h, stride_w, 1],
         padding=padding,
-        kernel_initializer=kernel_init,
-        bias_initializer=bias_init,
-        name=name
-    )(input)
+        name=name)
+
+    endpoints[str(output_ind)] = tf.nn.bias_add(out, bias)
 
     return endpoints
 
@@ -95,25 +96,19 @@ def add_dephtwise_conv2d(op, tensors_description, endpoints, interpreter):
     padding = op["builtin_options"]["padding"]
     depth_multiplier = op["builtin_options"]["depth_multiplier"]
 
-    kernel_init = tf.keras.initializers.Constant(interpreter.get_tensor(kernel_ind))
-    bias_init = tf.keras.initializers.Constant(interpreter.get_tensor(bias_ind))
+    kernels = tf.constant(interpreter.get_tensor(kernel_ind))
+    kernels = tf.transpose(kernels, [1, 2, 3, 0])
 
-  #  filters = tf.Variable(tf.random_normal((5,5,100,10)))
-  #  out = tf.nn.depthwise_conv2d(
-  #      inputs,
-  #      filters,
-  #      strides=[1,1,1,1],
-  #      padding='SAME')
+    bias = tf.constant(interpreter.get_tensor(bias_ind))
 
-    endpoints[str(output_ind)] = tf.keras.layers.DepthwiseConv2D(
-        kernel_size=[ksize_h, ksize_w],
-        strides=[stride_h, stride_w],
-        depth_multiplier=depth_multiplier,
+    out = tf.nn.depthwise_conv2d(
+        input,
+        kernels,
+        strides=[1, stride_h, stride_w, 1],
         padding=padding,
-        kernel_initializer=kernel_init,
-        bias_initializer=bias_init,
-        name=name
-    )(input)
+        name=name)
+
+    endpoints[str(output_ind)] = tf.nn.bias_add(out, bias)
 
     return endpoints
 
