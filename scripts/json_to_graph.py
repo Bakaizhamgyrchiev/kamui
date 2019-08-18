@@ -179,9 +179,16 @@ def add_reshape(op, tensors_description, endpoints, interpreter):
     layer_desc = tensors_description[output_ind]
 
     name = layer_desc["name"]
+    in_shape = tf.shape(input)
     new_shape = op["builtin_options"]["new_shape"]
 
-    endpoints[str(output_ind)] = tf.reshape(input, shape=new_shape, name=name)
+    batch = -1
+    num_channels = new_shape[2]
+    num_box = in_shape[1] * in_shape[2] * tf.cast(in_shape[3] / new_shape[2], tf.int32)
+
+    output_shape = tf.stack([batch, num_box, num_channels], axis=0)
+
+    endpoints[str(output_ind)] = tf.reshape(input, shape=output_shape, name=name)
 
     return endpoints
 
@@ -206,7 +213,9 @@ def add_concatenate(op, tensors_description, endpoints, interpreter):
 @click.command()
 @click.option('--json_graph', default=None, type=str)
 @click.option('--flatbuffer_graph', default=None, type=str)
-def fmain(json_graph, flatbuffer_graph):
+@click.option('--target_dir', default=None, type=str)
+@click.option('--frozen_graph_name', default=None, type=str)
+def fmain(json_graph, flatbuffer_graph, target_dir, frozen_graph_name):
 
     click.echo(f"--> Reading deserialized flatbuffer(tflite) json file {json_graph}..")
     with open(json_graph, "r") as f:
@@ -248,18 +257,12 @@ def fmain(json_graph, flatbuffer_graph):
             opcode = operator_codes[op["opcode_index"]]["builtin_code"]
             endpoints = fns[opcode](op, tensors_description, endpoints, interpreter)
 
-    input_data = cv2.imread("/home/bakai/oz/tmp/src/test.png")
-    input_data = cv2.resize(src=input_data,dsize=(128, 128))
-    input_data = np.expand_dims(input_data, 0)
-    input_data = np.float32(input_data)
 
-    with tf.Session(graph=graph) as sess:
-        sess.run(tf.global_variables_initializer())
-        cls, reg = sess.run(["classificators:0", "regressors:0"], feed_dict={"input:0": input_data})
+    click.echo(f"--> Saving graph to protocol buffer {os.path.join(target_dir, frozen_graph_name)}..")
+    os.makedirs(target_dir, exist_ok=True)
+    tf.train.write_graph(graph.as_graph_def(), target_dir, frozen_graph_name, as_text=False)
 
-        print(cls[0][0], reg[0][0])
-        #print(tf.trainable_variables())
-        #print(sess.run("conv2d/bias:0"))
+
 
 if __name__ == '__main__':
     fmain()
