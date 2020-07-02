@@ -1,8 +1,10 @@
 import tensorflow as tf
+
+tf.enable_resource_variables()
 import os
 import json
 import click
-from typing import List, Dict
+from typing import List
 
 SESSION_CONFIG = tf.ConfigProto(allow_soft_placement=True, device_count={"GPU": 0})
 
@@ -51,9 +53,11 @@ class Converter:
             pass
 
     def convert_saved_model(self):
+
         builder = tf.saved_model.builder.SavedModelBuilder(self.target)
 
         with tf.Session(config=SESSION_CONFIG, graph=self.graph) as sess:
+            sess.run(tf.global_variables_initializer())
             input_signatures, output_signatures = self._get_input_output_signatures()
 
             signature = tf.saved_model.signature_def_utils.predict_signature_def(input_signatures,
@@ -139,8 +143,10 @@ def add_conv2d(op, tensors_description, endpoints, interpreter):
 
     kernels = tf.constant(interpreter.get_tensor(kernel_ind))
     kernels = tf.transpose(kernels, [1, 2, 3, 0])
+    kernels = tf.get_variable(name + "_kernel", initializer=kernels)
 
     bias = tf.constant(interpreter.get_tensor(bias_ind))
+    bias = tf.get_variable(name + "_bias", initializer=bias)
 
     out = tf.nn.conv2d(
         input,
@@ -178,8 +184,7 @@ def add_prelu(op, tensors_description, endpoints, interpreter):
 
     name = layer_desc["name"]
 
-    alpha = tf.constant(interpreter.get_tensor(alpha_ind))
-    print(alpha)
+    alpha = tf.get_variable(name+"_prelu", tf.constant(interpreter.get_tensor(alpha_ind)))
 
     pos = tf.keras.layers.ReLU()(input)
     neg = -alpha * tf.keras.layers.ReLU()(-input)
@@ -213,8 +218,11 @@ def add_dephtwise_conv2d(op, tensors_description, endpoints, interpreter):
 
     kernels = tf.constant(interpreter.get_tensor(kernel_ind))
     kernels = tf.transpose(kernels, [1, 2, 3, 0])
+    kernels = tf.get_variable(name+"_kernel", initializer=kernels)
+
 
     bias = tf.constant(interpreter.get_tensor(bias_ind))
+    bias = tf.get_variable(name+"_bias", initializer=bias)
 
     out = tf.nn.depthwise_conv2d(
         input,
@@ -371,10 +379,9 @@ def fmain(json_graph, flatbuffer_graph, target_dir, frozen_graph_name):
             opcode = operator_codes[op["opcode_index"]]["builtin_code"]
             endpoints = fns[opcode](op, tensors_description, endpoints, interpreter)
 
-
     click.echo(f"--> Saving graph to protocol buffer {os.path.join(target_dir, frozen_graph_name)}..")
     os.makedirs(target_dir, exist_ok=True)
-    converter = Converter.for_saved_model(graph=graph, target=os.path.join(target_dir, "saved_model"),
+    converter = Converter.for_saved_model(graph=graph, target=os.path.join(target_dir, "saved_model_var"),
                                           input_tensors=["input"], output_tensors=["classificators", "regressors"])
     converter.convert()
 
